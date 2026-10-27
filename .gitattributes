@@ -1,0 +1,10 @@
+* text=auto
+# Unity 的 YAML 资产不要做行尾转换，也不要参与文本合并
+*.unity   -text
+*.prefab  -text
+*.asset   -text
+*.mat     -text
+*.meta    -text
+*.png binary
+*.jpg binary
+*.fbx binary
