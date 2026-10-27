@@ -1,6 +1,6 @@
 module ar-inspection/server
 
-go 1.27.3
+go 1.26.0
 
 require modernc.org/sqlite v1.61.0
 
