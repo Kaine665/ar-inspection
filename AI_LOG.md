@@ -22,6 +22,46 @@
 
 ## 记录
 
+### 2026-10-27 23:45 · server · 第一版实现
+
+**Prompt 原文**
+> 我觉得差不多可以了。那再看后端吧。
+
+> 一般生产环境中，跳过处理中，允许吗？
+
+> 那咱们就允许，当然，在这之前，我得请你告诉我server的文件夹结构为何这样设计，我不太明白。我没用过go
+
+> go.mod和main.go的差别是啥？
+
+> 懂了，开始执行吧
+
+**这一轮定下的规则**
+
+- `open → resolved` **允许跳级**（现场自己好了 / 误报，一步关掉）；`in_progress → open` 仍 409。
+- 同一状态重复 PATCH = 200 幂等，**且不刷新 `updatedAt`**（真幂等，不留假痕迹）。
+- 校验顺序写死：POST 七步、PATCH `400 → 404 → 409`，命中即返回（契约要求"只报第一个"）。
+
+**产出**
+
+- `docs/api.md`：把冻结契约从作业文档搬进仓库，并补上本轮拍板的两条、id 形态、405/415/413 属框架纯文本的声明、已知缺口清单。
+- `server/`：`cmd/api` 装配 + `internal/{model,store,api}` 三层单向依赖，`modernc.org/sqlite` 纯 Go 无 cgo。34 项契约冒烟 + 13 项 model 单测全绿。
+- 端到端验证：管理端（React）→ vite 代理 → Go → SQLite，点一下下拉，`PATCH` 带真实 ULID、`updatedAt` 刷新、界面同步；**admin 一行代码都没改**。
+
+**实现取舍**
+
+- `db.SetMaxOpenConns(1)`：SQLite 只允许一个写者，串行排队比让请求互相撞 `database is locked` 省心。
+- `ORDER BY created_at DESC, id DESC`：`createdAt` 只到秒，同一秒建的多条需要 id 做 tie-break，否则顺序不确定。
+- 未知路径也返回契约错误体；只有 405/415/413 是框架默认纯文本（已在 docs 声明，客户端归入 `bad_response`）。
+- 幂等分支不执行 UPDATE：语义上"什么都没发生"，就不该动时间戳。
+
+**踩坑**
+
+- **无 BOM 的 .ps1 在 PowerShell 5.1 里按 ANSI 解析** —— 冒烟脚本里所有中文变乱码、字符串错位、断言参数全串位（`Check` 报 "Cannot convert value System.String to Boolean"）。这是 2026-10-25 记过的坑，又踩了一次。修法：脚本加 UTF-8 BOM（`EF BB BF`），断言函数参数改弱类型。
+- 本机 `%LocalAppData%` 缺失，`GOCACHE` 必须显式指向 `$env:TEMP\gocache`，否则 `go run` 报缓存目录不可用。
+- 自写 ULID 的 base32 补齐写错过一次（`out[len(out)-width:]` 在长度不足时 panic），改成左补零；单测用 500 次同毫秒生成钉住唯一性。
+
+---
+
 ### 2026-10-27 22:52 · admin · 第一版实现（含工程初始化）
 
 **Prompt 原文**
