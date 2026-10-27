@@ -11,7 +11,7 @@
 | 线 | 目录 | 负责内容 | 起点状态 | 现行卡点 |
 |---|---|---|---|---|
 | server | `server/` | 四个端点 + SQLite 持久化 + 冒烟脚本 | 骨架（`cmd/api`、`internal/{api,model,store}` 空目录） | Go 1.27.3 已装在 `C:\Users\17130\dev\go`，未进系统 PATH |
-| admin | `admin/` | React+TS 列表页 + 三态修改 | 空 | 无，可先用 mock 数据开工 |
+| admin | `admin/` | React+TS 列表页 + 三态修改 | ✅ v1 已实现（列表 + 详情抽屉 + 契约页） | 无。自带 mock 后端，可独立跑通，见 `admin/DATAFLOW.md` |
 | ar-client | `ar-client/` | Unity AR Foundation 放置标记 + 上报 | 空（只有 Unity 用 .gitignore） | Unity Hub 缺 Android Build Support + SDK/NDK |
 
 **协作约定**
@@ -35,7 +35,7 @@
 # 后端
 cd server; go run ./cmd/api
 
-# 管理端
+# 管理端（没有后端时可用自带 mock：node tools/mock-api.mjs）
 cd admin; npm install; npm run dev
 
 # 手机端
