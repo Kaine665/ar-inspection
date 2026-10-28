@@ -50,6 +50,22 @@ public class SubmitForm : MonoBehaviour
         m_Busy = false;
     }
 
+    // 取消 = 这次上报作废。方块本来就和表单是一体的：它是这条记录的预览，
+    // 表单关了它就不该留下（否则屏幕上会堆着永远变不成记录的孤儿方块）。
+    void Cancel()
+    {
+        if (m_Cube != null && placement != null) placement.DiscardMarker(m_Cube);
+        m_Cube = null;
+        Debug.Log("[submit] 用户取消，丢弃这个标记");
+        Close();
+    }
+
+    // 提交之后立刻刷新顶栏的后端徽章：成功说明连通，失败多半是 adb reverse 掉了
+    void RefreshBackend()
+    {
+        if (ARHUD.Instance != null) ARHUD.Instance.CheckNow();
+    }
+
     void Submit()
     {
         var title = (m_Title ?? "").Trim();
@@ -87,6 +103,7 @@ public class SubmitForm : MonoBehaviour
 
         // 给 1.2 秒看提示，然后关表单，允许放下一个
         StartCoroutine(CloseAfter(1.2f));
+        RefreshBackend();
     }
 
     void OnFailed(string code, string message)
@@ -96,6 +113,7 @@ public class SubmitForm : MonoBehaviour
         m_Message = code == "network" ? $"连不上后端（{message}）" : message;
         Debug.LogWarning($"[submit] 失败 code={code} msg={message}");
         // 失败不关表单、不清内容 —— 现场网络差是常态（BR-09）
+        RefreshBackend();
     }
 
     IEnumerator CloseAfter(float seconds)
@@ -165,7 +183,7 @@ public class SubmitForm : MonoBehaviour
         GUILayout.BeginHorizontal();
         GUI.enabled = !m_Busy;
         if (GUILayout.Button("提交", m_Button, GUILayout.Height(56))) Submit();
-        if (GUILayout.Button("取消", m_Button, GUILayout.Height(56))) Close();
+        if (GUILayout.Button("取消", m_Button, GUILayout.Height(56))) Cancel();
         GUI.enabled = true;
         GUILayout.EndHorizontal();
 

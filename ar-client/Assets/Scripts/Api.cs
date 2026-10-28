@@ -39,10 +39,35 @@ public class InspectionDto
 [Serializable] public class ApiErrorBody { public ApiError error; }
 [Serializable] public class ApiError { public string code; public string message; }
 
+// 后端连通性。Unknown = 还没查过；DbDown = 服务活着但库不通（此时写入会失败）
+public enum BackendPhase { Unknown, Checking, Ok, DbDown, Down }
+
+[Serializable] public class HealthDto { public string status; public string db; public string version; }
+
 public static class Api
 {
     // 走 adb reverse：手机的 127.0.0.1:8080 被转发到电脑的 8080
     public const string BaseUrl = "http://127.0.0.1:8080";
+
+    // 健康检查：只回答"后端活着吗、库通吗"，不碰业务数据（对应 GET /api/health）
+    public static IEnumerator GetHealth(Action<HealthDto> onOk, Action<string> onErr)
+    {
+        using (var req = UnityWebRequest.Get(BaseUrl + "/api/health"))
+        {
+            req.timeout = 4;
+            yield return req.SendWebRequest();
+
+            if (req.result == UnityWebRequest.Result.Success)
+            {
+                HealthDto dto = null;
+                try { dto = JsonUtility.FromJson<HealthDto>(req.downloadHandler.text); }
+                catch (Exception e) { Debug.LogWarning("[api] health 响应不是预期的 JSON: " + e.Message); }
+                onOk?.Invoke(dto);
+                yield break;
+            }
+            onErr?.Invoke(req.error);
+        }
+    }
 
     public static IEnumerator CreateInspection(
         InspectionCreateDto body,

@@ -33,6 +33,10 @@ public class ARPlacement : MonoBehaviour
         if (!TryGetTapPosition(out var screenPos))
             return;
 
+        // 手指落在 HUD 的「重连后端」按钮上时不当作"放置"（题目 3.1 第 6 条）
+        if (ARHUD.IsOverHudUI(screenPos))
+            return;
+
         // 手指落在 UI 上时不当作"放置"（题目 3.1 第 6 条）
         if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject())
             return;
@@ -86,6 +90,22 @@ public class ARPlacement : MonoBehaviour
         }
         screenPos = default;
         return false;
+    }
+
+    // 表单被取消时调用：这个方块是"还没上报的预览"，取消就连锚点一起删掉，
+    // 不留一个永远不会变成记录的孤儿方块。
+    public void DiscardMarker(GameObject cube)
+    {
+        if (cube == null) return;
+
+        var parent = cube.transform.parent;
+        var anchor = parent != null ? parent.GetComponent<ARAnchor>() : null;
+
+        m_Placed.Remove(cube);
+        Destroy(cube);
+        if (anchor != null) Destroy(anchor.gameObject);
+
+        Debug.Log($"[placement] 取消上报，丢弃标记；剩余 {m_Placed.Count}");
     }
 
     public void ClearAll()
