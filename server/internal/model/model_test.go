@@ -72,15 +72,15 @@ func TestCanTransition(t *testing.T) {
 
 	// 期望表：以「从 → 到」为键
 	want := map[[2]Status]bool{
-		{StatusOpen, StatusOpen}:                true,  // 幂等
-		{StatusOpen, StatusInProgress}:          true,  // 前进
-		{StatusOpen, StatusResolved}:            true,  // 前进 + 跳级（本轮确认允许）
-		{StatusInProgress, StatusOpen}:          false, // 回退，409
-		{StatusInProgress, StatusInProgress}:    true,  // 幂等
-		{StatusInProgress, StatusResolved}:      true,  // 前进
-		{StatusResolved, StatusOpen}:            true,  // 唯一允许的回退（复发，BR-07）
-		{StatusResolved, StatusInProgress}:      false, // 回退，409
-		{StatusResolved, StatusResolved}:        true,  // 幂等
+		{StatusOpen, StatusOpen}:             true,  // 幂等
+		{StatusOpen, StatusInProgress}:       true,  // 前进
+		{StatusOpen, StatusResolved}:         true,  // 前进 + 跳级（本轮确认允许）
+		{StatusInProgress, StatusOpen}:       false, // 回退，409
+		{StatusInProgress, StatusInProgress}: true,  // 幂等
+		{StatusInProgress, StatusResolved}:   true,  // 前进
+		{StatusResolved, StatusOpen}:         true,  // 唯一允许的回退（复发，BR-07）
+		{StatusResolved, StatusInProgress}:   false, // 回退，409
+		{StatusResolved, StatusResolved}:     true,  // 幂等
 	}
 
 	for _, from := range all {

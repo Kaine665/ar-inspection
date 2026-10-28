@@ -257,8 +257,8 @@ func NewID(t time.Time) string {
 
 	buf := make([]byte, 0, 32)
 	buf = append(buf, "insp_"...)
-	buf = appendBase32(buf, raw[0:6], 10)   // 48 位时间 → 10 字符
-	buf = appendBase32(buf, raw[6:16], 16)  // 80 位随机 → 16 字符
+	buf = appendBase32(buf, raw[0:6], 10)  // 48 位时间 → 10 字符
+	buf = appendBase32(buf, raw[6:16], 16) // 80 位随机 → 16 字符
 	return string(buf)
 }
 
