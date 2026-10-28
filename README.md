@@ -18,14 +18,60 @@
 
 ---
 
+## 接口
+
+后端就四个端点，手机端与网页端读写同一份 SQLite 数据。完整定义（字段约束、校验顺序、状态机、错误码）在 `docs/api.md`。
+
+| 方法 + 路径 | 干什么 | 请求体 | 成功响应 |
+|---|---|---|---|
+| `GET /api/health` | 服务与数据库是否正常 | 无 | `200 {"status":"ok","db":"ok","version":"0.1.0"}` |
+| `POST /api/inspections` | 新建一条问题 | `title`、`description`、`priority`、`position{x,y,z}` | `201` + 整条记录，`id` / 时间 / `status=open` 由后端生成 |
+| `GET /api/inspections` | 取全部问题，按 `createdAt` 倒序 | 无 | `200 {"items":[…]}` |
+| `PATCH /api/inspections/:id` | 只改 `status` 一个字段 | `{"status":"in_progress"}` | `200` + 更新后整条 |
+
+一条记录：
+
+```json
+{
+  "id": "insp_06GQW0PCPR6TVS8HRGHVRAKMJZ",
+  "title": "B1 入口墙面破损",
+  "description": "左侧墙体存在裂缝，长约 40cm",
+  "priority": "high",
+  "status": "open",
+  "position": { "x": 0.42, "y": -1.30, "z": 1.26 },
+  "createdAt": "2026-10-27T15:37:55Z",
+  "updatedAt": "2026-10-27T15:37:55Z"
+}
+```
+
+`position` 是 AR 会话坐标，单位米；`y` 常为负，因为原点是手机启动时的高度，地面在下方。`status` 取值 `open` / `in_progress` / `resolved`，`priority` 取值 `low` / `medium` / `high`。
+
+任何错误都只有一种体：`{"error":{"code":"invalid_argument","message":"标题不能为空"}}`，`code` 四个固定值 `invalid_argument`(400) / `not_found`(404) / `invalid_transition`(409) / `internal`(500)。
+
+---
+
+## 界面
+
+管理端三个页面（截图里的数据由 `server/scripts/seed.ps1` 造）：
+
+| 问题列表 | 详情抽屉 |
+|---|---|
+| ![问题列表](docs/img/01-列表.png) | ![详情抽屉](docs/img/02-详情抽屉.png) |
+
+「契约与状态」页把四个端点、四个错误码、以及每次请求的原始收发都摊在界面上，不用开 DevTools 也能核验数据是怎么流的：
+
+![契约与请求日志](docs/img/03-契约与请求日志.png)
+
+手机端界面在真机上看（见下方「手机端怎么配后端地址」）。
+
+---
+
 ## 快速开始
 
 ### 1. 后端
 
 ```powershell
 cd server
-$env:PATH = "C:\Users\17130\dev\go\bin;$env:PATH"   # 如果 go 已在 PATH 可省略
-$env:GOCACHE = "$env:TEMP\gocache"
 go run ./cmd/api            # → http://127.0.0.1:8080，库在 server/data/inspections.db
 ```
 
@@ -43,7 +89,7 @@ npm run dev                 # → http://localhost:5173（vite 已把 /api 代�
 
 ### 3. 手机端
 
-前置：Unity Hub 里 **2022.3.62f3**，带 Android Build Support（SDK/NDK/JDK 已配在 `D:\Android`，详见 `memory` 台账）；手机开 USB 调试，机身是 arm64。
+前置：Unity Hub 里 **2022.3.62f3**，带 Android Build Support（SDK/NDK/JDK 在 Unity 的 External Tools 里指向本机安装目录）；手机开 USB 调试，机身是 arm64。
 
 ```powershell
 # ① 先把手机的 8080 转发到电脑（必须做，否则手机连不上后端）
