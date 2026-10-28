@@ -18,6 +18,8 @@ public static class ProjectSetup
     const string ScenePath  = "Assets/Scenes/Main.unity";
     const string MatPath    = "Assets/Materials/PlaneMat.mat";
     const string PrefabPath = "Assets/Prefabs/ARPlaneVisualizer.prefab";
+    const string MarkerMatPath = "Assets/Materials/MarkerMat.mat";
+    const string MarkerPrefabPath = "Assets/Prefabs/Marker.prefab";
 
     // 本机已有的 Android 工具链（Unity 自带的 SDK/NDK/OpenJDK 模块没装，改用外部）
     const string SdkPath = @"D:\Android\Sdk";
@@ -31,7 +33,8 @@ public static class ProjectSetup
         ConfigureXR();
         var mat = CreatePlaneMaterial();
         var prefab = CreatePlanePrefab(mat);
-        CreateScene(prefab);
+        var marker = CreateMarkerPrefab();
+        CreateScene(prefab, marker);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
         Debug.Log("SETUP_OK");
@@ -63,6 +66,9 @@ public static class ProjectSetup
         PlayerSettings.allowedAutorotateToLandscapeRight = true;
 
         // ARCore 不支持 Vulkan：强制 OpenGLES3，关掉自动图形 API
+        // 真机走 http://127.0.0.1:8080（adb reverse），Android 9+ 默认禁明文，必须显式放行
+        PlayerSettings.insecureHttpOption = InsecureHttpOption.AlwaysAllowed;
+
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3 });
 
@@ -165,7 +171,30 @@ public static class ProjectSetup
         return prefab;
     }
 
-    static void CreateScene(GameObject planePrefab)
+    static GameObject CreateMarkerPrefab()
+    {
+        EnsureFolder("Assets/Materials");
+        EnsureFolder("Assets/Prefabs");
+
+        // 用 Unlit：AR 场景里没有光源（也没有阴影），Standard 会渲染成纯黑
+        var shader = Shader.Find("Unlit/Color") ?? Shader.Find("Sprites/Default") ?? Shader.Find("Standard");
+        var mat = new Material(shader) { name = "MarkerMat" };
+        mat.color = new Color(1.0f, 0.45f, 0.10f);
+        AssetDatabase.DeleteAsset(MarkerMatPath);
+        AssetDatabase.CreateAsset(mat, MarkerMatPath);
+
+        var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        go.name = "Marker";
+        go.transform.localScale = Vector3.one * 0.12f;   // 12 cm 的方块，够小不挡路、够大看得见
+        go.GetComponent<MeshRenderer>().sharedMaterial = AssetDatabase.LoadAssetAtPath<Material>(MarkerMatPath);
+
+        AssetDatabase.DeleteAsset(MarkerPrefabPath);
+        var loaded = PrefabUtility.SaveAsPrefabAsset(go, MarkerPrefabPath);
+        UnityEngine.Object.DestroyImmediate(go);
+        return loaded;
+    }
+
+    static void CreateScene(GameObject planePrefab, GameObject markerPrefab)
     {
         EnsureFolder("Assets/Scenes");
         var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
@@ -202,6 +231,16 @@ public static class ProjectSetup
         xrOrigin.Camera = cam;
         xrOrigin.CameraFloorOffsetObject = offset;
 
+        // 3. 放置能力：射线命中 + 锚点 + 点击放置
+        var mgrGO = new GameObject("AR Manager");
+        var raycastManager = mgrGO.AddComponent<ARRaycastManager>();
+        var anchorManager  = mgrGO.AddComponent<ARAnchorManager>();
+        var placement      = mgrGO.AddComponent<ARPlacement>();
+        placement.cubePrefab     = markerPrefab;
+        placement.raycastManager = raycastManager;
+        placement.anchorManager  = anchorManager;
+        placement.arCamera       = cam;
+
         // 3. 平面检测：检出平面后按预制体生成可视化
         var pmGO = new GameObject("AR Plane Manager");
         var pm = pmGO.AddComponent<ARPlaneManager>();
@@ -211,6 +250,12 @@ public static class ProjectSetup
         // 4. 屏幕上的调试信息（跟踪状态 + 平面数量）
         var hud = new GameObject("HUD");
         hud.AddComponent<ARHUD>();
+
+        // 5. 上报表单（IMGUI：内置字体在 Android 上能正确显示中文）
+        var formGO = new GameObject("Submit Form");
+        var submitForm = formGO.AddComponent<SubmitForm>();
+        submitForm.placement = placement;
+        placement.form = submitForm;
 
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene, ScenePath);
