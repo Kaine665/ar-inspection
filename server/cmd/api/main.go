@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"ar-inspection/server/internal/api"
+	"ar-inspection/server/internal/config"
 	"ar-inspection/server/internal/store"
 )
 
@@ -21,28 +22,41 @@ import (
 var version = "0.1.0"
 
 func main() {
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-	addr := getenv("ADDR", ":8080")
-	dbPath := getenv("DB_PATH", "data/inspections.db")
-
-	st, err := store.Open(dbPath)
+	// 配置先于一切。配置错了就别启动——带着可疑配置跑起来，比不跑更难查。
+	cfg, err := config.Load()
 	if err != nil {
-		logger.Error("启动失败：数据库打不开", "db", dbPath, "err", err)
+		slog.New(slog.NewTextHandler(os.Stderr, nil)).Error("启动失败：配置有误", "err", err)
+		os.Exit(1)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
+
+	st, err := store.Open(cfg.DBPath)
+	if err != nil {
+		logger.Error("启动失败：数据库打不开", "db", cfg.DBPath, "err", err)
 		os.Exit(1)
 	}
 	defer st.Close()
 
 	srv := &http.Server{
-		Addr:              addr,
-		Handler:           api.New(st, logger, version).Handler(),
+		Addr:    cfg.Addr,
+		Handler: api.New(st, logger, version, api.WithCORS(cfg.CORSOrigin)).Handler(),
+		// 四个超时都显式给：没有它们，一个慢客户端就能一直占着连接
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
 
-	logger.Info("server 已启动", "addr", addr, "db", dbPath, "version", version)
+	// 启动日志把这些值全打出来：出问题时第一件事就是确认"跑的是哪份配置"
+	logger.Info("server 已启动",
+		"env", cfg.Env,
+		"addr", cfg.Addr,
+		"db", cfg.DBPath,
+		"version", version,
+		"cors", describeCORS(cfg.CORSOrigin),
+		"log", cfg.LogLevel.String(),
+	)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -71,9 +85,10 @@ func main() {
 	logger.Info("已退出")
 }
 
-func getenv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+// describeCORS 把"空字符串"翻译成人能读的说法，免得看日志时以为是配置漏了。
+func describeCORS(origin string) string {
+	if origin == "" {
+		return "off（同源部署，不发跨域头）"
 	}
-	return fallback
+	return origin
 }
