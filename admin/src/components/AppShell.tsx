@@ -1,6 +1,7 @@
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import HealthBadge from './HealthBadge'
 import RequestLog from './RequestLog'
+import { config } from '../config'
 import type { UseHealthResult } from '../hooks/useHealth'
 
 interface Props {
@@ -32,6 +33,14 @@ export default function AppShell({ health }: Props) {
             </nav>
           </div>
           <div className="header-right">
+            {/* 环境标签：一眼看出这一版连的是开发还是生产，避免"以为在测生产" */}
+            <span
+              className="chip"
+              title={config.apiBase === '' ? '同源 /api（dev 走 vite 代理，prod 走反向代理）' : config.apiBase}
+              style={{ fontWeight: 600, color: config.envLabel === 'PROD' ? 'var(--st-resolved)' : 'var(--prio-medium)' }}
+            >
+              {config.envLabel}
+            </span>
             <HealthBadge health={health} />
           </div>
         </div>

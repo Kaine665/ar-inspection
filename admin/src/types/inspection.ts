@@ -35,10 +35,15 @@ export interface HealthResponse {
   version: string
 }
 
-/** 后端业务错误码，只有这四个（契约 6.3）。 */
-export type ServerErrorCode = 'invalid_argument' | 'not_found' | 'invalid_transition' | 'internal'
+/** 后端业务错误码，只有这五个（见 docs/api.md 第 3 节）。 */
+export type ServerErrorCode =
+  | 'invalid_argument'
+  | 'not_found'
+  | 'method_not_allowed'
+  | 'invalid_transition'
+  | 'internal'
 
-/** 前端口径的错误码：后端四个 + 两个只可能由前端自己产生的。 */
+/** 前端口径的错误码：后端五个 + 两个只可能由前端自己产生的。 */
 export type ClientErrorCode = 'network' | 'bad_response'
 
 export type AppErrorCode = ServerErrorCode | ClientErrorCode

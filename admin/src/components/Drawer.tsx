@@ -24,15 +24,20 @@ export default function Drawer({ item, pending, error, onChangeStatus, onClose }
       <aside className="drawer" role="dialog" aria-label="问题详情">
         <div className="drawer-head">
           <div style={{ minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-              <PriorityTag priority={item.priority} />
-              <span className="muted mono">{item.id}</span>
-            </div>
+            <span className="muted mono">{item.id}</span>
             <h2 className="drawer-title">{item.title}</h2>
           </div>
           <button type="button" className="close-btn" onClick={onClose} aria-label="关闭">
             ×
           </button>
+        </div>
+
+        <div className="field">
+          <div className="field-label">优先级</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+            <PriorityTag priority={item.priority} />
+            <span className="muted">{item.priority}</span>
+          </div>
         </div>
 
         <div className="field">
@@ -73,11 +78,6 @@ export default function Drawer({ item, pending, error, onChangeStatus, onClose }
           </div>
         </div>
 
-        <div className="notice">
-          v1 只能改状态。标题、优先级、坐标不可编辑：契约冻结点第 5 条——PATCH 传
-          <span className="mono"> status </span>
-          以外的字段直接 400，不做静默忽略。
-        </div>
       </aside>
     </>
   )

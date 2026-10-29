@@ -10,6 +10,7 @@
 // ============================================================
 
 import { pushLog } from './log'
+import { config } from '../config'
 import type {
   ApiErrorBody,
   AppErrorCode,
@@ -20,12 +21,18 @@ import type {
   Status,
 } from '../types/inspection'
 
-/** 默认走同源 /api/*（dev 由 vite 代理到 Go）。要直连就把 VITE_API_BASE 设成
- *  http://127.0.0.1:8080 —— 此时后端必须自带 CORS 头。 */
-const API_BASE: string = import.meta.env.VITE_API_BASE ?? ''
-const TIMEOUT_MS = 8000
+// 地址与超时都来自 src/config.ts（它读 .env.development / .env.production）。
+// 这个文件只管"怎么发"，不管"发给谁、等多久"。
+const API_BASE: string = config.apiBase
+const TIMEOUT_MS: number = config.apiTimeoutMs
 
-const SERVER_CODES: readonly ServerErrorCode[] = ['invalid_argument', 'not_found', 'invalid_transition', 'internal']
+const SERVER_CODES: readonly ServerErrorCode[] = [
+  'invalid_argument',
+  'not_found',
+  'method_not_allowed',
+  'invalid_transition',
+  'internal',
+]
 const PRIORITIES: readonly Priority[] = ['low', 'medium', 'high']
 const STATUSES: readonly Status[] = ['open', 'in_progress', 'resolved']
 
@@ -103,7 +110,7 @@ async function call(method: string, path: string, body?: unknown): Promise<unkno
     // 走到这里说明后端没按契约返回错误体。三种常见情况分开处理：
     // ① dev 代理连不上 Go（vite 返回 500 + "ECONNREFUSED …"）→ 其实是网络错
     // ② dev 代理连接失败但响应体是空的（vite 有时就这样）→ 同样是网络错
-    // ③ 真的返回了纯文本（如 Go 默认的 405）→ 契约之外的响应
+    // ③ 真的返回了纯文本（如 415 / 413 这类框架自己答的）→ 契约之外的响应
     const empty5xx = res.status >= 500 && text.trim().length === 0
     if (/ECONNREFUSED|ECONNRESET|proxy error|socket hang up/i.test(text) || empty5xx) {
       throw new ApiError('network', '连不上后端服务（代理没拿到任何响应）', res.status)
@@ -233,6 +240,9 @@ export function describeError(err: unknown): ErrorPresentation {
       }
     case 'not_found':
       return { scope: 'banner', text: `${e.message}。请刷新列表。`, needsReload: true }
+    case 'method_not_allowed':
+      // 路径对、动词错：是客户端代码写错了，刷新多少次都没用
+      return { scope: 'banner', text: `${e.message}。这条不是数据问题，刷新不会好转，要改客户端代码。`, needsReload: false }
     case 'internal':
       return { scope: 'banner', text: '服务异常，请重试。', needsReload: true }
     case 'invalid_argument':

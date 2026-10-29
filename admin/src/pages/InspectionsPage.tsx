@@ -73,31 +73,27 @@ export default function InspectionsPage() {
         </div>
       </div>
 
-      <div className="stats">
+      {/* 数据卡片本身就是筛选按钮：一行只放一个东西，不用再在下面摆一排 tab */}
+      <div className="stats" role="group" aria-label="按状态筛选">
         {FILTERS.map((f) => (
-          <div className="stat" key={f}>
-            <div className="stat-label">{f === 'all' ? '全部' : STATUS_LABEL[f]}</div>
-            <div className="stat-value">{counts[f]}</div>
-          </div>
+          <button
+            type="button"
+            key={f}
+            className="stat"
+            aria-pressed={filter === f}
+            title={f === 'all' ? '显示全部记录' : `只看「${STATUS_LABEL[f]}」`}
+            onClick={() => setFilter(f)}
+          >
+            <span className="stat-label">{f === 'all' ? '全部' : STATUS_LABEL[f]}</span>
+            <span className="stat-value">{counts[f]}</span>
+          </button>
         ))}
       </div>
 
       <div className="toolbar">
-        <div className="tabs">
-          {FILTERS.map((f) => (
-            <button
-              type="button"
-              key={f}
-              className="tab"
-              aria-pressed={filter === f}
-              onClick={() => setFilter(f)}
-            >
-              {f === 'all' ? '全部' : STATUS_LABEL[f]}
-              <span className="tab-count">{counts[f]}</span>
-            </button>
-          ))}
-        </div>
-        <span className="muted">过滤只发生在前端，不额外请求后端（契约不支持 query 参数）</span>
+        <span className="muted">
+          点上面的卡片按状态筛选 · 过滤只发生在前端，不额外请求后端（契约不支持 query 参数）
+        </span>
       </div>
 
       {list.banner !== null && items !== null ? (

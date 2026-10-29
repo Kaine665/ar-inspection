@@ -38,7 +38,8 @@ const ENDPOINTS = [
 
 const ERRORS = [
   { code: 'invalid_argument', http: '400', when: '字段格式不对（标题空 / 优先级不认识 / 坐标非有限数）', here: '行内红字' },
-  { code: 'not_found', http: '404', when: '改一条不存在的 id', here: '顶部横幅 + 刷新' },
+  { code: 'not_found', http: '404', when: '路径不存在，或改一条不存在的 id', here: '顶部横幅 + 刷新' },
+  { code: 'method_not_allowed', http: '405', when: '路径对、动词不对（如 DELETE /api/inspections），响应带 Allow 头', here: '顶部横幅（要改代码，刷新没用）' },
   { code: 'invalid_transition', http: '409', when: '状态流转不被允许（除 resolved → open 外的回退）', here: '行内红字 + 控件回滚' },
   { code: 'internal', http: '500', when: '后端自己出错', here: '顶部横幅 + 重试' },
 ]
@@ -49,6 +50,7 @@ const SMOKE = [
   'curl.exe -X PATCH http://127.0.0.1:8080/api/inspections/<id> -H "Content-Type: application/json" -d "{\\"status\\":\\"in_progress\\"}"',
   'curl.exe -X PATCH http://127.0.0.1:8080/api/inspections/<id> -H "Content-Type: application/json" -d "{\\"title\\":\\"x\\"}"',
   'curl.exe -X PATCH http://127.0.0.1:8080/api/inspections/insp_999 -H "Content-Type: application/json" -d "{\\"status\\":\\"resolved\\"}"',
+  'curl.exe -i -X DELETE http://127.0.0.1:8080/api/inspections',
 ]
 
 function CopyLine({ text }: { text: string }) {
@@ -156,7 +158,7 @@ export default function SystemPage({ health }: Props) {
       </div>
 
       <div className="card">
-        <h2 className="card-title">四个错误码与它们在这页面上的落点（契约 6.3）</h2>
+        <h2 className="card-title">五个错误码与它们在这页面上的落点（契约 3 节）</h2>
         <table className="plain">
           <thead>
             <tr>

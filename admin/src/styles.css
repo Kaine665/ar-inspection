@@ -16,7 +16,7 @@
 
   --prio-high: #c25030;
   --prio-medium: #b88018;
-  --prio-low: #857d74;
+  --prio-low: #7d756d;
 
   --st-open: #b88018;
   --st-progress: #3a7ab8;
@@ -111,17 +111,23 @@ button { font: inherit; color: inherit; }
 }
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
 
+/* 优先级标签：实心色块 + 白字。它是列表页里唯一用大面积颜色讲话的元素，
+   因为"高/中/低"只有三个字，细边框小字放在一屏十六条里几乎看不见。 */
 .prio-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 4px;
   font-size: 12px;
-  border-radius: 999px;
-  padding: 1px 8px;
-  border: 1px solid currentColor;
-  line-height: 18px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #fff;
   flex: none;
 }
-.prio-high { color: var(--prio-high); }
-.prio-medium { color: var(--prio-medium); }
-.prio-low { color: var(--prio-low); }
+.prio-high { background: var(--prio-high); }
+.prio-medium { background: var(--prio-medium); }
+.prio-low { background: var(--prio-low); }
 
 /* ---------------- 列表页 ---------------- */
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
@@ -129,28 +135,30 @@ button { font: inherit; color: inherit; }
 .page-sub { font-size: 13px; color: var(--text-2); margin: 4px 0 0; }
 
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 16px 0 14px; }
+/* 四块数字卡片就是筛选按钮：尺寸一动不动，靠手形光标 + hover 底色 + 选中描边表达可点。
+   选中态用 box-shadow 而不是加粗边框——加粗会让卡片宽高各长 1px，点一下就跳一下。 */
 .stat {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
-.stat-label { font-size: 12px; color: var(--text-3); }
-.stat-value { font-size: 20px; font-weight: 600; line-height: 1.2; margin-top: 2px; }
+.stat:hover { border-color: var(--border-strong); background: var(--surface-2); }
+.stat:active { box-shadow: inset 0 0 0 1px var(--border-strong); }
+.stat:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stat[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-weak);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.stat-label { display: block; font-size: 12px; color: var(--text-3); }
+.stat[aria-pressed="true"] .stat-label { color: var(--accent); font-weight: 600; }
+.stat-value { display: block; font-size: 20px; font-weight: 600; line-height: 1.2; margin-top: 2px; }
 
 .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
-.tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.tab {
-  border: 1px solid var(--border);
-  background: transparent;
-  border-radius: 999px;
-  padding: 4px 11px;
-  font-size: 13px;
-  color: var(--text-2);
-  cursor: pointer;
-}
-.tab[aria-pressed="true"] { background: var(--surface); border-color: var(--border-strong); color: var(--text); font-weight: 600; }
-.tab-count { color: var(--text-3); margin-left: 5px; }
 .select {
   font: inherit;
   font-size: 13px;
@@ -255,16 +263,6 @@ button { font: inherit; color: inherit; }
 .coords { font-variant-numeric: tabular-nums; }
 .close-btn { border: none; background: transparent; font-size: 18px; line-height: 1; color: var(--text-3); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
 .close-btn:hover { background: var(--surface-2); color: var(--text); }
-
-.notice {
-  margin-top: 18px;
-  font-size: 12px;
-  color: var(--text-2);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 9px 11px;
-}
 
 /* ---------------- Toast ---------------- */
 .toast-wrap { position: fixed; right: 20px; bottom: 20px; z-index: 40; display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
