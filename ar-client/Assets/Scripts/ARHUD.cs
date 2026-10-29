@@ -94,6 +94,19 @@ public class ARHUD : MonoBehaviour
         return Instance.m_ReconnectRect.Contains(guiPos);
     }
 
+    // 一次性提示：显示几秒后自动消失。
+    // 给"必须被看见、但不属于常规状态"的消息用（例如锁屏回来后环境被重新识别、标记已清空）。
+    // 用静态字段：调用方（ARPlacement）不该为了弹一句话先去拿 HUD 引用。
+    static string s_Notice = "";
+    static float s_NoticeUntil = 0f;
+
+    public static void Notice(string message, float seconds = 6f)
+    {
+        s_Notice = message;
+        s_NoticeUntil = Time.realtimeSinceStartup + seconds;
+        Debug.Log("[hud] " + message);   // 同一句话也进日志，事后能查"当时到底提示了什么"
+    }
+
     void OnGUI()
     {
         if (m_Style == null)
@@ -148,6 +161,17 @@ public class ARHUD : MonoBehaviour
         }
 
         GUI.Label(new Rect(Screen.width * 0.03f, y + line, Screen.width * 0.94f, line * 2.6f), m_Sb.ToString(), m_Style);
+
+        // ④ 一次性提示：压在屏幕中部，带半透明底，6 秒后自己消失
+        if (!string.IsNullOrEmpty(s_Notice) && Time.realtimeSinceStartup < s_NoticeUntil)
+        {
+            var box = new Rect(Screen.width * 0.05f, Screen.height * 0.42f, Screen.width * 0.9f, Screen.height * 0.16f);
+            GUI.color = new Color(0f, 0f, 0f, 0.55f);
+            GUI.DrawTexture(box, Texture2D.whiteTexture);
+            GUI.color = new Color(1f, 0.88f, 0.45f);
+            GUI.Label(box, s_Notice, m_StatusStyle);
+            GUI.color = old;
+        }
     }
 
     string StatusLine()

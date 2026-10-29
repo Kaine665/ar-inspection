@@ -1,5 +1,7 @@
 using System.Collections;
 using UnityEngine;
+using UnityEngine.XR.ARFoundation;
+using UnityEngine.XR.ARSubsystems;
 
 // L3 的录入面：放好方块后弹出表单，标题必填、描述可选、优先级三档，提交到 Go 后端。
 // 用 IMGUI 而不是 uGUI，原因很实在：Unity 内置字体在 Android 上能正确显示中文（已实测），
@@ -21,6 +23,7 @@ public class SubmitForm : MonoBehaviour
     string m_Message = "";
     bool   m_IsError;
     bool   m_Busy;
+    bool   m_Submitted;   // 已成功入库：此时方块是「记录」而不是「预览」，不能再被取消删掉
 
     public bool IsOpen => m_Open;
 
@@ -37,6 +40,7 @@ public class SubmitForm : MonoBehaviour
         m_Cube = cube;
         m_Open = true;
         m_Busy = false;
+        m_Submitted = false;
         m_Message = "";
         m_IsError = false;
         m_Title = "";
@@ -54,6 +58,8 @@ public class SubmitForm : MonoBehaviour
     // 表单关了它就不该留下（否则屏幕上会堆着永远变不成记录的孤儿方块）。
     void Cancel()
     {
+        // 上报成功之后表单还会停留 1.2 秒显示单号，这期间的点击只应关闭，不该删掉已入库的标记
+        if (m_Submitted) { Close(); return; }
         if (m_Cube != null && placement != null) placement.DiscardMarker(m_Cube);
         m_Cube = null;
         Debug.Log("[submit] 用户取消，丢弃这个标记");
@@ -68,6 +74,17 @@ public class SubmitForm : MonoBehaviour
 
     void Submit()
     {
+        // 门控的第二处：从放置到填完表中间有十几秒，这期间跟踪可能掉档。
+        // 掉档时提交上去的坐标是错的，且用户看不出来——所以宁可拦住并说清楚。
+        if (!TrackingReliable())
+        {
+            m_IsError = true;
+            m_Message = "跟踪不稳定，请移动手机重新识别环境后再提交";
+            ARHUD.Notice("跟踪不稳定，已暂停提交", 3f);
+            Debug.Log("[submit] 已拦截提交：notTrackingReason=" + ARSession.notTrackingReason);
+            return;
+        }
+
         var title = (m_Title ?? "").Trim();
         if (title.Length == 0) { m_IsError = true; m_Message = "标题不能为空"; return; }
         if (title.Length > 100) { m_IsError = true; m_Message = "标题最多 100 字"; return; }
@@ -92,6 +109,7 @@ public class SubmitForm : MonoBehaviour
         m_Busy = false;
         m_IsError = false;
         m_Message = dto != null ? $"已上报 {dto.id}" : "已上报（响应未解析）";
+        m_Submitted = true;
         Debug.Log("[submit] 成功: " + m_Message);
 
         // 方块变绿 = 这条已经落到后端了（视觉上的"已提交"）
@@ -132,10 +150,17 @@ public class SubmitForm : MonoBehaviour
         m_Title2 = new GUIStyle(GUI.skin.label)  { fontSize = Mathf.RoundToInt(baseSize * 1.25f), fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
     }
 
+    // 跟踪是否可靠：会话级信号。放置侧还会额外看命中平面的 trackingState。
+    static bool TrackingReliable()
+    {
+        return ARSession.notTrackingReason == NotTrackingReason.None;
+    }
+
     void OnGUI()
     {
         if (!m_Open) return;
         EnsureStyles();
+        bool trackOk = TrackingReliable();
 
         float w = Mathf.Min(Screen.width * 0.86f, Screen.height * 1.2f);
         float h = Screen.height * 0.62f;
@@ -171,6 +196,13 @@ public class SubmitForm : MonoBehaviour
         GUILayout.EndHorizontal();
 
         GUILayout.Space(10);
+        if (!trackOk)
+        {
+            var c0 = GUI.color;
+            GUI.color = new Color(1f, 0.85f, 0.45f);
+            GUILayout.Label("跟踪不稳定：请把手机对准地面缓慢移动，稳定后再提交（现在提交坐标会错）", m_Label);
+            GUI.color = c0;
+        }
         if (!string.IsNullOrEmpty(m_Message))
         {
             var old = GUI.color;
@@ -181,9 +213,11 @@ public class SubmitForm : MonoBehaviour
 
         GUILayout.FlexibleSpace();
         GUILayout.BeginHorizontal();
-        GUI.enabled = !m_Busy;
-        if (GUILayout.Button("提交", m_Button, GUILayout.Height(56))) Submit();
-        if (GUILayout.Button("取消", m_Button, GUILayout.Height(56))) Cancel();
+        // 提交成功后按钮锁死：再点一次会重复建记录（表单要 1.2 秒后才自动关）
+        // 跟踪不稳定时也锁死：留着"取消"可点，用户随时能退出去重新识别环境。
+        GUI.enabled = !m_Busy && !m_Submitted && trackOk;
+        if (GUILayout.Button(m_Submitted ? "已上报" : "提交", m_Button, GUILayout.Height(56))) Submit();
+        if (GUILayout.Button(m_Submitted ? "关闭" : "取消", m_Button, GUILayout.Height(56))) Cancel();
         GUI.enabled = true;
         GUILayout.EndHorizontal();
 
