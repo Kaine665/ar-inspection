@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Reflection;
 using UnityEditor;
 using UnityEditor.Build;
@@ -21,9 +22,23 @@ public static class ProjectSetup
     const string MarkerMatPath = "Assets/Materials/MarkerMat.mat";
     const string MarkerPrefabPath = "Assets/Prefabs/Marker.prefab";
 
-    // 本机已有的 Android 工具链（Unity 自带的 SDK/NDK/OpenJDK 模块没装，改用外部）
-    const string SdkPath = @"D:\Android\Sdk";
-    const string JdkPath = @"D:\Android\jdk";   // JDK 11，2022.3 推荐的版本
+    // 后端环境宏：有它 = 生产包，没有它 = 开发包（判定逻辑见 AppConfig.cs）
+    const string ProdDefine = "AR_PROD";
+
+    // ---------------------------------------------------------------
+    // Android 工具链路径：先读系统环境变量，读不到才回退到本机默认位置。
+    // 换一台机器只要设好 ANDROID_SDK_ROOT / ANDROID_NDK_ROOT / JAVA_HOME，代码一行不用改。
+    // 注意这里不能写成 const —— const 在编译期就被替换成字面量，读不了运行期环境变量。
+    // ---------------------------------------------------------------
+    static string SdkPath => EnvOr("ANDROID_SDK_ROOT", EnvOr("ANDROID_HOME", @"D:\Android\Sdk"));
+    static string JdkPath => EnvOr("JAVA_HOME", @"D:\Android\jdk");
+    static string NdkPath => EnvOr("ANDROID_NDK_ROOT", System.IO.Path.Combine(SdkPath, @"ndk\23.1.7779620"));
+
+    static string EnvOr(string key, string fallback)
+    {
+        var v = Environment.GetEnvironmentVariable(key);
+        return string.IsNullOrEmpty(v) ? fallback : v;
+    }
 
     [MenuItem("AR/1. Setup Project")]
     public static void Setup()
@@ -40,13 +55,61 @@ public static class ProjectSetup
         Debug.Log("SETUP_OK");
     }
 
+    // ---------------------------------------------------------------
+    // 后端环境切换：决定打包出来的 App 连哪个地址（判定逻辑在 AppConfig.cs）
+    //   DEV  = adb reverse，手机连电脑的 127.0.0.1:8080（演示、日常开发用这个）
+    //   PROD = AppConfig 里的 HTTPS 正式地址
+    // 实现方式是加/去编译宏 AR_PROD：生产包里连 dev 地址那几个字符都不会被打进去。
+    // ---------------------------------------------------------------
+    static bool HasProdDefine()
+    {
+        return PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.Android)
+            .Split(';').Any(s => s.Trim() == ProdDefine);
+    }
+
+    static void SetProdDefine(bool prod)
+    {
+        var kept = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.Android)
+            .Split(';')
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0 && s != ProdDefine)
+            .ToList();
+        if (prod) kept.Add(ProdDefine);
+        PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, string.Join(";", kept));
+        AssetDatabase.SaveAssets();
+        Debug.Log($"[setup] 后端环境 = {(prod ? "PROD" : "DEV")}（宏 {ProdDefine} {(prod ? "已加" : "已去")}），重新打包后生效");
+    }
+
+    const string DevMenu = "AR/2. Backend = DEV (adb reverse)";
+    const string ProdMenu = "AR/3. Backend = PROD (HTTPS)";
+
+    [MenuItem(DevMenu, false, 20)]
+    static void UseDevBackend() => SetProdDefine(false);
+
+    [MenuItem(DevMenu, true)]
+    static bool UseDevBackendValidate()
+    {
+        Menu.SetChecked(DevMenu, !HasProdDefine());
+        return true;
+    }
+
+    [MenuItem(ProdMenu, false, 21)]
+    static void UseProdBackend() => SetProdDefine(true);
+
+    [MenuItem(ProdMenu, true)]
+    static bool UseProdBackendValidate()
+    {
+        Menu.SetChecked(ProdMenu, HasProdDefine());
+        return true;
+    }
+
     static void ConfigureExternalTools()
     {
         EditorPrefs.SetString("AndroidSdkRoot", SdkPath);
         EditorPrefs.SetString("JdkPath", JdkPath);
-        var ndkRoot = @"D:\Android\Sdk\ndk\23.1.7779620";
-        if (System.IO.Directory.Exists(ndkRoot)) EditorPrefs.SetString("AndroidNdkRoot", ndkRoot);
-        Debug.Log($"[setup] sdk={SdkPath} jdk={JdkPath}");
+        if (System.IO.Directory.Exists(NdkPath)) EditorPrefs.SetString("AndroidNdkRoot", NdkPath);
+        else Debug.LogWarning("[setup] NDK 目录不存在：" + NdkPath + "（设 ANDROID_NDK_ROOT 可覆盖）");
+        Debug.Log($"[setup] sdk={SdkPath} jdk={JdkPath} ndk={NdkPath}");
     }
 
     static void ConfigurePlayer()
@@ -241,11 +304,14 @@ public static class ProjectSetup
         placement.anchorManager  = anchorManager;
         placement.arCamera       = cam;
 
-        // 3. 平面检测：检出平面后按预制体生成可视化
-        var pmGO = new GameObject("AR Plane Manager");
-        var pm = pmGO.AddComponent<ARPlaneManager>();
+        // 3. 平面检测：检出平面后按预制体生成可视化。
+        //    注意：ARPlaneManager 必须和 ARRaycastManager 在同一个 GameObject 上——
+        //    ARRaycastManager 内部用 GetComponent<ARPlaneManager>() 解析 hit.trackable，
+        //    分开挂会导致 hit.trackable 永远是 null（锚点就挂不上）。
+        var pm = mgrGO.AddComponent<ARPlaneManager>();
         pm.planePrefab = planePrefab;
         pm.detectionMode = PlaneDetectionMode.Horizontal;   // L1 只开水平面；L2 之后可改 Both
+        placement.planeManager = pm;
 
         // 4. 屏幕上的调试信息（跟踪状态 + 平面数量）
         var hud = new GameObject("HUD");

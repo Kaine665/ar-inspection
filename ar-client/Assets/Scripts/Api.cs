@@ -46,15 +46,15 @@ public enum BackendPhase { Unknown, Checking, Ok, DbDown, Down }
 
 public static class Api
 {
-    // 走 adb reverse：手机的 127.0.0.1:8080 被转发到电脑的 8080
-    public const string BaseUrl = "http://127.0.0.1:8080";
+    // 地址、路径、超时全部来自 AppConfig —— 这个文件只管"怎么发"，不管"发给谁"。
+    public static string BaseUrl => AppConfig.BaseUrl;
 
     // 健康检查：只回答"后端活着吗、库通吗"，不碰业务数据（对应 GET /api/health）
     public static IEnumerator GetHealth(Action<HealthDto> onOk, Action<string> onErr)
     {
-        using (var req = UnityWebRequest.Get(BaseUrl + "/api/health"))
+        using (var req = UnityWebRequest.Get(BaseUrl + AppConfig.HealthPath))
         {
-            req.timeout = 4;
+            req.timeout = AppConfig.HealthTimeoutSeconds;
             yield return req.SendWebRequest();
 
             if (req.result == UnityWebRequest.Result.Success)
@@ -77,12 +77,12 @@ public static class Api
         var json = JsonUtility.ToJson(body);
         var payload = Encoding.UTF8.GetBytes(json);
 
-        using (var req = new UnityWebRequest(BaseUrl + "/api/inspections", "POST"))
+        using (var req = new UnityWebRequest(BaseUrl + AppConfig.InspectionsPath, "POST"))
         {
             req.uploadHandler = new UploadHandlerRaw(payload);
             req.downloadHandler = new DownloadHandlerBuffer();
             req.SetRequestHeader("Content-Type", "application/json");
-            req.timeout = 10;
+            req.timeout = AppConfig.CreateTimeoutSeconds;
 
             yield return req.SendWebRequest();
 
