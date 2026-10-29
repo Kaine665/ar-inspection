@@ -104,6 +104,7 @@ type Code string
 const (
 	CodeInvalidArgument   Code = "invalid_argument"
 	CodeNotFound          Code = "not_found"
+	CodeMethodNotAllowed  Code = "method_not_allowed"
 	CodeInvalidTransition Code = "invalid_transition"
 	CodeInternal          Code = "internal"
 )
@@ -121,6 +122,15 @@ func InvalidArgument(format string, args ...any) *Error {
 
 func NotFound(format string, args ...any) *Error {
 	return &Error{Code: CodeNotFound, Message: fmt.Sprintf(format, args...)}
+}
+
+// MethodNotAllowed 表示「路径存在、方法不对」。
+//
+// 它是 404 之外单独一类，理由很实际：客户端把 GET 写成 DELETE，报「没有这个端点」
+// 会把人引去查路由注册，而真正的问题是动词；反过来，把路径写错却收到 405，
+// 也会把人引去查方法。两者混用，报错就失去了指路的作用。
+func MethodNotAllowed(format string, args ...any) *Error {
+	return &Error{Code: CodeMethodNotAllowed, Message: fmt.Sprintf(format, args...)}
 }
 
 func InvalidTransition(format string, args ...any) *Error {

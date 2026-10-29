@@ -22,27 +22,55 @@ import (
 // 就被挡掉，而不是先整个吃进内存。
 const maxBodyBytes = 64 << 10
 
-// Server 是一次服务运行期间的全部依赖，只有三样：数据库、日志、版本号。
+// Server 是一次服务运行期间的全部依赖：数据库、日志、版本号、允许跨域的来源。
 //
 // 它自己不持有任何业务状态——状态全在 SQLite 里，所以进程重启不会丢东西。
 // 这也解释了为什么这里没有"缓存"之类的字段。
 type Server struct {
-	store   *store.Store // 读写数据库的唯一通道
-	log     *slog.Logger // 每请求一行日志
-	version string       // 出现在 /api/health 里，用来确认部署的是哪个版本
+	store      *store.Store // 读写数据库的唯一通道
+	log        *slog.Logger // 每请求一行日志
+	version    string       // 出现在 /api/health 里，用来确认部署的是哪个版本
+	corsOrigin string       // 允许跨域的来源；"" = 完全不发跨域头（同源部署）
 }
 
-// New 把依赖装进 Server。参数由 main.go 提供，这里不设默认值也不做校验。
-func New(st *store.Store, logger *slog.Logger, version string) *Server {
-	return &Server{store: st, log: logger, version: version}
+// Option 是可选的启动参数。用变参而不是改签名，已有调用（含测试）一行都不用动。
+type Option func(*Server)
+
+// WithCORS 指定允许跨域的来源：
+//
+//	"*"                    → 全放开，只该用于 dev
+//	"https://admin.xx.com" → 只允许这一个来源
+//	""                     → 完全不发跨域头（管理端与后端同源部署时就这样，最安全）
+func WithCORS(origin string) Option {
+	return func(s *Server) { s.corsOrigin = origin }
+}
+
+// defaultCORSOrigin 只是"没人指定时的兜底"（测试、内嵌使用）。
+// main.go 永远按 APP_ENV 显式传 WithCORS，所以生产不会意外放开。
+const defaultCORSOrigin = "*"
+
+// New 把依赖装进 Server。参数由 main.go 提供，这里不设默认值也不做业务校验。
+func New(st *store.Store, logger *slog.Logger, version string, opts ...Option) *Server {
+	s := &Server{store: st, log: logger, version: version, corsOrigin: defaultCORSOrigin}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
 }
 
 // Handler 组装路由，返回给 http.Server 使用。
 //
-// 四条业务路由 + 一条兜底。请求进入后依次穿过 CORS、日志、路由三层。
+// 四条业务路由 + 每类路径的方法兜底 + 全局兜底。请求进入后依次穿过
+// CORS → 请求 id → 日志 → panic 兜底 → 路由。
 //
 // 兜底那条（"/"）不能省：没有它，未匹配的路径会拿到 Go 自带的纯文本 404，
 // 形状不符合契约，客户端解析 JSON 会失败——那是最难查的一类问题。
+//
+// 方法兜底也是最容易漏的一条，原因实测出来的：既然注册了 "/"，
+// ServeMux 就再也不会自己返回 405（它只在"没有任何 pattern 匹配"时才 405），
+// DELETE /api/inspections 会被 "/" 吃掉，变成 404「没有这个端点」。
+// 可这条路径明明存在，只是动词不对——那样报错是在指错方向。
+// 所以两个业务路径各挂一条不带方法的兜底，显式回答 405 + Allow。
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
@@ -50,9 +78,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/inspections", s.handleList)         // 取全部记录
 	mux.HandleFunc("POST /api/inspections", s.handleCreate)      // 新建（唯一写入口）
 	mux.HandleFunc("PATCH /api/inspections/{id}", s.handlePatch) // 只改状态
-	mux.HandleFunc("/", s.handleNotFound)                        // 兜底：未知路径也返回契约错误体
 
-	return withCORS(withLogging(s.log, mux))
+	// 方法兜底：路径对、方法不对 → 405 + Allow（形状与其它错误一致）
+	mux.HandleFunc("/api/inspections", s.handleMethodNotAllowed("GET, POST"))
+	mux.HandleFunc("/api/inspections/{id}", s.handleMethodNotAllowed("PATCH"))
+	mux.HandleFunc("/", s.handleNotFound) // 兜底：未知路径也返回契约错误体
+
+	return withCORS(s.corsOrigin, withRequestID(withLogging(s.log, withRecovery(s.log, mux))))
 }
 
 // ---------------------------------------------------------------
@@ -339,7 +371,7 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------
-// 兜底 404
+// 兜底：404 与 405
 // ---------------------------------------------------------------
 
 // handleNotFound 接住所有没匹配上路由的请求，返回契约形状的错误体。
@@ -348,6 +380,21 @@ func (s *Server) handlePatch(w http.ResponseWriter, r *http.Request) {
 // 顺手把方法路径回显，方便调用方确认自己到底请求了什么。
 func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
 	s.writeError(w, r, model.NotFound("没有这个端点: %s %s", r.Method, r.URL.Path))
+}
+
+// handleMethodNotAllowed 生成"路径对、方法不对"的处理器。
+//
+// 它做两件 404 那条不做的事：
+//  1. 写 Allow 头 —— 这是 HTTP 对 405 的强制要求，客户端（和 curl -v）能直接看到
+//     "这个路径认哪些动词"，不用去翻文档；
+//  2. 用 method_not_allowed 而不是 not_found —— 让报错指向真正的问题。
+//
+// 返回闭包而不是写死一个函数：两条路径允许的方法不同，Allow 的内容必须跟着变。
+func (s *Server) handleMethodNotAllowed(allow string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Allow", allow) // 必须在写状态码之前设，写完就改不了了
+		s.writeError(w, r, model.MethodNotAllowed("这个端点不接受 %s（允许 %s）", r.Method, allow))
+	}
 }
 
 // ---------------------------------------------------------------
@@ -371,7 +418,7 @@ type errorEnvelope struct {
 // writeError 是全项目唯一写错误响应的地方（架构设计 S5：统一错误出口）。
 //
 // 它做两件事：
-//  1. 把业务错误码翻译成 HTTP 状态码（400 / 404 / 409 / 500）
+//  1. 把业务错误码翻译成 HTTP 状态码（400 / 404 / 405 / 409 / 500）
 //  2. 内部错误只把原始原因写进日志，响应体换成一句人话
 //
 // 为什么必须收成一个出口：错误体形状一变三端都要改。
@@ -392,11 +439,13 @@ func (s *Server) writeError(w http.ResponseWriter, r *http.Request, err error) {
 		status = http.StatusBadRequest // 400：字段不对，改一下就能过
 	case model.CodeNotFound:
 		status = http.StatusNotFound // 404：记录不存在，刷新一下
+	case model.CodeMethodNotAllowed:
+		status = http.StatusMethodNotAllowed // 405：路径对、动词错，客户端代码写错了
 	case model.CodeInvalidTransition:
 		status = http.StatusConflict // 409：状态不允许这么变
 	case model.CodeInternal:
 		// 500：我们的错。日志留原始原因（含 SQL 细节），响应体只给一句人话
-		s.log.Error("内部错误", "path", r.URL.Path, "err", err)
+		s.log.Error("内部错误", "requestId", requestIDFrom(r), "path", r.URL.Path, "err", err)
 		me = model.Internal("服务异常，请重试")
 	}
 

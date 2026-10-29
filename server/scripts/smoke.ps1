@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    契约冒烟检查：一条命令验证四个端点 + 四个错误码是否和 docs 里冻结的一致。
+    契约冒烟检查：一条命令验证四个端点 + 五个错误码是否和 docs 里冻结的一致。
 
 .DESCRIPTION
     为什么要用 curl.exe 而不是 Invoke-RestMethod：
@@ -153,6 +153,22 @@ Write-Host "`n10. 未知路径也要走契约错误体"
 $r = Invoke-Api GET "/api/nope"
 Check "返回 404" ($r.Status -eq 404) "实际 $($r.Status)：$($r.Raw)"
 Check "错误体形状正确" ($r.Json.error.code -eq "not_found") ($r.Raw)
+
+# ---------------------------------------------------------------- 11 兜底：405
+Write-Host "`n11. 路径对、方法不对 → 405 + Allow（契约第 3 节）"
+# 这一条单跑 curl：要读响应头，而 Invoke-Api 只回状态码和 body
+$hdrFile  = Join-Path $work "hdr405.txt"
+$bodyFile = Join-Path $work "body405.json"
+$code = & curl.exe -s -o $bodyFile -D $hdrFile -w "%{http_code}" -X DELETE "$Base/api/inspections"
+$raw405 = ""
+if (Test-Path $bodyFile) { $raw405 = [System.IO.File]::ReadAllText($bodyFile, $utf8NoBom) }
+$json405 = $null
+try { $json405 = $raw405 | ConvertFrom-Json } catch { $json405 = $null }
+Check "返回 405" ([int]$code -eq 405) "实际 $code：$raw405"
+Check "code=method_not_allowed" ($null -ne $json405 -and $json405.error.code -eq "method_not_allowed") $raw405
+$allowLine = Select-String -Path $hdrFile -Pattern "^Allow:\s*(.+)$" | Select-Object -First 1
+$allow = if ($allowLine) { $allowLine.Matches[0].Groups[1].Value.Trim() } else { "" }
+Check "Allow 头 = GET, POST" ($allow -eq "GET, POST") "实际：$allow"
 
 # ---------------------------------------------------------------- 汇总
 $total = $script:pass + $script:fail
