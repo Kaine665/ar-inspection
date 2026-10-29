@@ -69,17 +69,22 @@
 { "error": { "code": "invalid_argument", "message": "标题不能为空" } }
 ```
 
-- `code` —— 给机器看的，四个固定值
+- `code` —— 给机器看的，五个固定值
 - `message` —— 给人看的中文，可直接显示
 
 | `code` | HTTP | 什么情况 | 三端各自怎么处理 |
 |---|---|---|---|
 | `invalid_argument` | 400 | 字段格式不对：标题空、优先级不认识、坐标不是有限数、PATCH 传了非 status 字段 | 手机端红字 / 管理端行内红字 |
-| `not_found` | 404 | 改一条不存在的 id | 管理端「记录已不存在，请刷新」 |
+| `not_found` | 404 | 请求了不存在的路径，或改一条不存在的 id | 管理端「记录已不存在，请刷新」 |
+| `method_not_allowed` | 405 | 路径存在、HTTP 方法不对（如 `DELETE /api/inspections`）。响应必带 `Allow` 头，写明该路径接受哪些动词 | 正常客户端不会发出这种请求，它是脚本或客户端代码写错的信号；管理端按页面级横幅显示 message |
 | `invalid_transition` | 409 | 状态流转不被允许 | 管理端行内提示 + 控件回滚 |
-| `internal` | 500 | 后端自己出错 | 统一「服务异常，请重试」 |
+| `internal` | 500 | 后端自己出错（含 handler panic——有兜底，不会掐断连接） | 统一「服务异常，请重试」 |
 
-**四个 code 之外的 HTTP 状态码是框架行为，不走这个错误体**：`405 method_not_allowed`、`415 unsupported_media_type`、`413 payload_too_large` 由 Go 的 `ServeMux` / `http.Server` 直接返回**纯文本**。客户端解析失败时应归入「契约之外的响应」，不要当成业务错误。
+**405 与 404 分成两个码，是因为这两件事的下一步动作不同**：路径写错该去查路由，动词写错该去查客户端代码。混成一个，报错就失去了指路的作用。
+
+**这两个 HTTP 状态码仍由框架直接返回纯文本，不属于本契约**：`415 unsupported_media_type`、`413 payload_too_large`。客户端解析失败时应归入「契约之外的响应」，不要当成业务错误。
+
+**每个响应都带 `X-Request-Id` 头**：服务端沿用上游传入的合法值（1–64 位字母、数字、`-`、`_`），否则自己生成 24 位十六进制串。同一个 id 同时出现在响应头与服务端日志的 `requestId` 字段里——跨端对账只认它，不靠时间戳。
 
 ---
 
@@ -156,6 +161,9 @@ curl.exe -X PATCH http://127.0.0.1:8080/api/inspections/<id> -H "Content-Type: a
 
 # 5 校验失败的样子（应看到 400 + invalid_argument）
 curl.exe -X POST http://127.0.0.1:8080/api/inspections -H "Content-Type: application/json" -d "{\"title\":\"\"}"
+
+# 6 方法不对的样子（应看到 405 + method_not_allowed，响应头里有 Allow: GET, POST）
+curl.exe -i -X DELETE http://127.0.0.1:8080/api/inspections
 ```
 
 `create.json` 必须是 **UTF-8 无 BOM**，否则中文会坏：
