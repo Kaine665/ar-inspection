@@ -7,7 +7,11 @@ npm-debug.log*
 pnpm-debug.log*
 .env
 .env.*
+# 环境文件里只有地址/超时这类非机密默认值，要进库——否则别人 clone 下来不知道有哪些开关。
+# 真正的机密（token、密码）写 .env.local，它被 *.local 和 .env.* 双重挡住。
 !.env.example
+!.env.development
+!.env.production
 
 # ---- Go / 后端 ----
 server/bin/
